@@ -31,6 +31,7 @@ our @EXPORT = qw(
     get_project_phid
     get_revision_by_id
     intersect
+    is_attachment_phab_revision
     make_revision_public
     request
     set_project_members
@@ -65,11 +66,8 @@ sub create_revision_attachment {
     # Check for previous attachment with same revision id.
     # If one matches then return it instead. This is fine as
     # BMO does not contain actual diff content.
-    my $review_attachment = first {
-        $_->contenttype eq PHAB_CONTENT_TYPE
-          && trim( $_->data ) eq trim($revision_uri)
-    }
-    @{ $bug->attachments };
+    my @review_attachments = grep { is_attachment_phab_revision($_) } @{ $bug->attachments };
+    my $review_attachmet = first { trim($_->data) eq $revision_uri } @review_attachments;
     return $review_attachment if defined $review_attachment;
 
     # No attachment is present, so we can now create new one
@@ -259,6 +257,13 @@ sub get_members_by_bmo_id {
     }
 
     return \@phab_ids;
+}
+
+sub is_attachment_phab_revision {
+    my ($attachment, $include_obsolete) = @_;
+    return ($attachment->contenttype eq PHAB_CONTENT_TYPE
+            && ($include_obsolete || !$attachment->isobsolete) ? 1 : 0)
+            && $attachment->attacher->login eq 'phab-bot@bmo.tld') ? 1 : 0;
 }
 
 sub request {
