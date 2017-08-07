@@ -25,13 +25,14 @@ $func->(@ARGV);
 sub cmd_httpd  {
     check_data_dir();
     wait_for_db();
-    run( '/usr/sbin/httpd', '-DFOREGROUND', 
-        '-f', '/app/httpd/httpd.conf', @_ );
-}
 
-sub cmd_qa_httpd {
-    copy_qa_extension();
-    cmd_httpd('-DHTTPD_IN_SUBDIR', @_);
+    my @cmd = ( '/usr/sbin/httpd', '-DFOREGROUND', '-f', '/app/httpd/httpd.conf' );
+    if ($ENV{BZ_QA_LEGACY_MODE}) {
+        copy_qa_extension();
+        push @cmd, '-DHTTPD_IN_SUBDIR';
+    }
+
+    run(@cmd);
 }
 
 sub cmd_load_test_data {
@@ -39,17 +40,25 @@ sub cmd_load_test_data {
 
     die "BZ_QA_ANSWERS_FILE is not set" unless $ENV{BZ_QA_ANSWERS_FILE};
     run( 'perl', 'checksetup.pl', '--no-template', $ENV{BZ_QA_ANSWERS_FILE} );
-    run( 'perl', 'scripts/generate_bmo_data.pl',
-        '--user-pref', 'ui_experiments=off' );
-    chdir '/app/qa/config';
-    say 'chdir(/app/qa/config)';
-    run( 'perl', 'generate_test_data.pl' );
+
+    if ($ENV{BZ_QA_LEGACY_MODE}) {
+        run( 'perl', 'scripts/generate_bmo_data.pl',
+            '--user-pref', 'ui_experiments=off' );
+        chdir '/app/qa/config';
+        say 'chdir(/app/qa/config)';
+        run( 'perl', 'generate_test_data.pl' );
+    }
+    else {
+        run( 'perl', 'scripts/generate_bmo_data.pl' );
+    }
 }
 
 sub cmd_test_heartbeat {
-    my $conf = require $ENV{BZ_QA_CONF_FILE};
-    wait_for_httpd($conf->{browser_url});
-    my $heartbeat = get("$conf->{browser_url}/__heartbeat__");
+    my ($url) = @_;
+    die "test_heartbeat requires a url!\n" unless $url;
+
+    wait_for_httpd($url);
+    my $heartbeat = get("$url/__heartbeat__");
     if ($heartbeat && $heartbeat =~ /Bugzilla OK/) {
         exit 0;
     }
@@ -93,8 +102,6 @@ sub copy_qa_extension {
 }
 
 sub wait_for_db {
-    die "/app/localconfig is missing\n" unless -f "/app/localconfig";
-
     my $c = Bugzilla::Install::Localconfig::read_localconfig();
     for my $var (qw(db_name db_host db_user db_pass)) {
         die "$var is not set!" unless $c->{$var};
