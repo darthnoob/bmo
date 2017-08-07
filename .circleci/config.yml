@@ -94,7 +94,7 @@ jobs:
       - *bmo_slim_image
     steps:
       - checkout
-      - *default_setup
+      - *default_qa_setup
       - run:
           name: run sanity tests
           command: |
@@ -123,7 +123,7 @@ jobs:
     docker: *docker_oldtests
     steps:
       - checkout
-      - *default_setup
+      - *default_qa_setup
       - run: /app/scripts/entrypoint.pl load_test_data --legacy
       - *run_httpd
       - run:
