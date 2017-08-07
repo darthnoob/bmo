@@ -144,16 +144,19 @@ jobs:
           perl -MSys::Hostname -i -pE 's/<<HOSTNAME>>/hostname()/ges' $BZ_QA_ANSWERS_FILE
           /app/scripts/entrypoint.pl load_test_data 
           mkdir artifacts
-      - run: /app/scripts/entrypoint.pl test_heartbeat "http://$(hostname)"
+      - *run_httpd
+      - run: /app/scripts/entrypoint.pl test_heartbeat "http://$(hostname):$PORT"
 
 workflows:
   version: 2
   tests:
     jobs:
+      - test_bmo
       - test_sanity
       - test_webservices
-      - test_selenium
-      - test_bmo
+      - test_selenium:
+          requires:
+            - test_bmo
       - build:
           requires:
             - test_sanity
