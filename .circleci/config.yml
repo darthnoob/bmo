@@ -40,16 +40,6 @@ defaults:
     - image: selenium/standalone-firefox:2.53.1
     - image: memcached:latest
 
-  docker_default: &docker_default
-    - <<: *bmo_slim_image
-      environment:
-        <<: *bmo_env
-        BZ_QA_ANSWERS_FILE:  /app/.circleci/checksetup_answers.txt
-    - <<: *mysql_image
-      environment: *mysql_env
-    - image: memcached:latest
-    # - image: selenium/standalone-firefox:2.53.1
-
   default_qa_setup: &default_qa_setup
     run:
       command: |
@@ -58,12 +48,6 @@ defaults:
         perl -MSys::Hostname -i -pE 's/<<HOSTNAME>>/hostname()/ges' $BZ_QA_ANSWERS_FILE
         perl checksetup.pl --no-database --default-localconfig
         mkdir artifacts
-
-  run_httpd: &run_httpd
-    run:
-      command: |
-        /app/scripts/entrypoint.pl httpd &> artifacts/httpd.log
-      background: true
 
 jobs:
   build:
@@ -109,10 +93,12 @@ jobs:
     steps:
       - checkout
       - *default_qa_setup
-      - run: /app/scripts/entrypoint.pl load_test_data
-      - *run_httpd
+      - run: |
+          rm -f /app/localconfig
+          /app/scripts/entrypoint.pl load_test_data
       - run:
           command: |
+            rm -f /app/localconfig
             /app/scripts/entrypoint.pl test_webservices | tee artifacts/$CIRCLE_JOB.txt
       - store_artifacts:
           path: /app/artifacts
@@ -124,10 +110,12 @@ jobs:
     steps:
       - checkout
       - *default_qa_setup
-      - run: /app/scripts/entrypoint.pl load_test_data --legacy
-      - *run_httpd
+      - run: |
+          rm -f /app/localconfig
+          /app/scripts/entrypoint.pl load_test_data --legacy
       - run:
           command: |
+            rm -f /app/localconfig
             /app/scripts/entrypoint.pl test_selenium | tee artifacts/$CIRCLE_JOB.txt
       - store_artifacts:
           path: /app/artifacts
@@ -135,17 +123,32 @@ jobs:
   test_bmo:
     parallelism: 4
     working_directory: /app
-    docker: *docker_default
+    docker:
+      - <<: *bmo_slim_image
+        environment:
+          <<: *bmo_env
+          BZ_QA_ANSWERS_FILE:  /app/.circleci/checksetup_answers.txt
+          TWD_HOST: localhost
+          TWD_PORT: 4444
+          TWD_BROWSER: firefox
+      - <<: *mysql_image
+        environment: *mysql_env
+      - image: memcached:latest
+      - image: selenium/standalone-firefox:2.53.1
     steps:
       - checkout
       - run: |
           mv /opt/bmo/local /app/local
           perl checksetup.pl --no-database --default-localconfig
           perl -MSys::Hostname -i -pE 's/<<HOSTNAME>>/hostname()/ges' $BZ_QA_ANSWERS_FILE
-          /app/scripts/entrypoint.pl load_test_data 
+          rm -f /app/localconfig
+          /app/scripts/entrypoint.pl load_test_data
           mkdir artifacts
-      - *run_httpd
-      - run: /app/scripts/entrypoint.pl test_heartbeat "http://$(hostname):$PORT"
+      - run: |
+          BZ_BASE_URL="http://$(hostname):$PORT"
+          export BZ_BASE_URL
+          rm -f /app/localconfig
+          /app/scripts/entrypoint.pl test_bmo -q -f t/bmo/*.t
 
 workflows:
   version: 2
@@ -155,8 +158,7 @@ workflows:
       - test_sanity
       - test_webservices
       - test_selenium:
-          requires:
-            - test_bmo
+          requires: test_bmo
       - build:
           requires:
             - test_sanity
